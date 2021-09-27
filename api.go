@@ -37,7 +37,7 @@ func AddUser(c *gin.Context) {
 	newUser.Balance = input.Balance
 	UserRefs[newUser.Id] = newUser
 	UserRefsNeedUpdate[newUser.Id] = newUser
-	c.IndentedJSON(http.StatusCreated, UserRefs) //gin.H{"error": ""}
+	c.IndentedJSON(http.StatusCreated, gin.H{"error": ""})
 }
 
 func GetUser(c *gin.Context) {
