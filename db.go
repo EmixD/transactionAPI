@@ -17,78 +17,83 @@ var ColUsers *mongo.Collection
 var ColDeposits *mongo.Collection
 var ColTransactions *mongo.Collection
 
-var dbCtxSyncCancel context.CancelFunc
-var dbCtxConnectCancel context.CancelFunc
-var dbClient *mongo.Client
+var DbCtxSyncCancel context.CancelFunc    // Function to be called to signal a need to stop sync with DB
+var DbCtxConnectCancel context.CancelFunc // Cancel function for the dbClient.Connect context
+var DbClient *mongo.Client
 
-func dbConnect() {
+func DbConnect() {
 	var err error
 	err = godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
 	}
 
-	dbClient, err = mongo.NewClient(options.Client().ApplyURI(os.Getenv("MONGODB_URL")))
-	if err != nil {
-		log.Fatal(err)
-	}
-	var dbCtxConnect context.Context
-	dbCtxConnect, dbCtxConnectCancel = context.WithCancel(context.Background())
-
-	err = dbClient.Connect(dbCtxConnect)
+	DbClient, err = mongo.NewClient(options.Client().ApplyURI(os.Getenv("MONGODB_URL")))
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	ColUsers = dbClient.Database("dbname").Collection("colUsers")
-	ColDeposits = dbClient.Database("dbname").Collection("colDeposits")
-	ColTransactions = dbClient.Database("dbname").Collection("colTransactions")
+	var DbCtxConnect context.Context // This context will be active while the server runs
+	DbCtxConnect, DbCtxConnectCancel = context.WithCancel(context.Background())
 
-	err = ColUsers.Drop(dbCtxConnect)
+	err = DbClient.Connect(DbCtxConnect)
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = ColDeposits.Drop(dbCtxConnect)
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = ColTransactions.Drop(dbCtxConnect)
-	if err != nil {
-		log.Fatal(err)
-	}
+
+	ColUsers = DbClient.Database(os.Getenv("DBNAME")).Collection(os.Getenv("COLLECTION_USERS_NAME"))
+	ColDeposits = DbClient.Database(os.Getenv("DBNAME")).Collection(os.Getenv("COLLECTION_DEPOSITS_NAME"))
+	ColTransactions = DbClient.Database(os.Getenv("DBNAME")).Collection(os.Getenv("COLLECTION_TRANSACTIONS_NAME"))
+
+	// err = ColUsers.Drop(dbCtxConnect)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// err = ColDeposits.Drop(dbCtxConnect)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// err = ColTransactions.Drop(dbCtxConnect)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 }
 
-func dbStartSync(period time.Duration, maxsynctime time.Duration) {
-	dbConnect()
+func DbStartSync(period time.Duration, maxsynctime time.Duration) {
+	// Start periodic sync with DB
+	DbConnect()
+
 	var ctxSync context.Context
-	ctxSync, dbCtxSyncCancel = context.WithCancel(context.Background())
-	go dbSyncLoop(ctxSync, period, maxsynctime)
+	ctxSync, DbCtxSyncCancel = context.WithCancel(context.Background())
+	// dbCtxSyncCancel is used later to terminate dbSyncLoop
+	go DbSyncLoop(ctxSync, period, maxsynctime)
 }
 
-func dbStopSync(maxsynctime time.Duration) {
-	dbCtxSyncCancel()
-	time.Sleep(maxsynctime) // Wait for current sync if any
-	dbUpdate(maxsynctime)   // last DB update
-	ctx, ctxCancel := context.WithTimeout(context.Background(), maxsynctime)
-	dbClient.Disconnect(ctx)
+func DbStopSync(waittime time.Duration) {
+	// Stop periodic sync with DB
+	DbCtxSyncCancel()
+	fmt.Println("Waiting for DB sync loop to stop...")
+	time.Sleep(waittime) // Wait for current sync if any
+
+	ctx, ctxCancel := context.WithTimeout(context.Background(), time.Second)
+	DbClient.Disconnect(ctx)
 	ctxCancel()
-	dbCtxConnectCancel()
+
+	DbCtxConnectCancel()
 }
 
-func dbSyncLoop(ctxsync context.Context, period time.Duration, maxsynctime time.Duration) {
-	for i := 0; i < 20; i++ { //should be replaced by an infinite loop
+func DbSyncLoop(ctxsync context.Context, period time.Duration, maxsynctime time.Duration) {
+	for {
 		time.Sleep(period)
+		DbUpdate(maxsynctime)
 		if ctxsync.Err() != nil {
-			fmt.Println("Sync loop stopped")
+			fmt.Println("DB sync loop stopped")
 			return
 		}
-		fmt.Println("Starting sync...")
-		dbUpdate(maxsynctime)
-		fmt.Println("Sync done")
 	}
 }
 
-func dbUpdate(maxtime time.Duration) {
+func DbUpdate(maxtime time.Duration) {
 	UserRefsNeedUpdateCopy := UserRefsNeedUpdate
 	DepositRefsNeedUpdateCopy := DepositRefsNeedUpdate
 	TransactionRefsNeedUpdateCopy := TransactionRefsNeedUpdate
@@ -126,5 +131,4 @@ func dbUpdate(maxtime time.Duration) {
 			log.Fatal(err)
 		}
 	}
-
 }
