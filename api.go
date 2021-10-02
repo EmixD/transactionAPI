@@ -2,17 +2,19 @@ package main
 
 import (
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
-var UserRefs = map[uint64]*User{}                         // All users
-var DepositRefs = map[uint64]*Deposit{}                   // All deposits
-var TransactionRefs = map[uint64]*Transaction{}           // All transactions
-var UserRefsNeedUpdate = map[uint64]*User{}               // Users that need to be updated in DB
-var DepositRefsNeedUpdate = map[uint64]*Deposit{}         // Deposits that need to be updated in DB
-var TransactionRefsNeedUpdate = map[uint64]*Transaction{} // Transactions that need to be updated in DB
+var mutex sync.Mutex                             // For reading and updating all Refs maps and slices
+var UserRefs = map[uint64]*User{}                // All users
+var DepositRefs = map[uint64]*Deposit{}          // All deposits
+var TransactionRefs = map[uint64]*Transaction{}  // All transactions
+var UserRefsNeedUpdate = []*User{}               // Users that need to be updated in DB
+var DepositRefsNeedUpdate = []*Deposit{}         // Deposits that need to be updated in DB
+var TransactionRefsNeedUpdate = []*Transaction{} // Transactions that need to be updated in DB
 
 func AddUser(c *gin.Context) {
 	var input AddUserInput
@@ -20,6 +22,9 @@ func AddUser(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	mutex.Lock()
+	defer mutex.Unlock()
 
 	_, isInUserRefs := UserRefs[input.Id]
 	if isInUserRefs {
@@ -36,7 +41,8 @@ func AddUser(c *gin.Context) {
 	newUser.Id = input.Id
 	newUser.Balance = input.Balance
 	UserRefs[newUser.Id] = newUser
-	UserRefsNeedUpdate[newUser.Id] = newUser
+	UserRefsNeedUpdate = append(UserRefsNeedUpdate, newUser)
+
 	c.IndentedJSON(http.StatusCreated, gin.H{"error": ""})
 }
 
@@ -46,6 +52,9 @@ func GetUser(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	mutex.Lock()
+	defer mutex.Unlock()
 
 	_, isInUserRefs := UserRefs[input.Id]
 	if !isInUserRefs {
@@ -66,6 +75,9 @@ func AddDeposit(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	mutex.Lock()
+	defer mutex.Unlock()
 
 	_, isInUserRefs := UserRefs[input.UserId]
 	if !isInUserRefs {
@@ -91,13 +103,14 @@ func AddDeposit(c *gin.Context) {
 	newDeposit.BalanceBefore = UserRefs[input.UserId].Balance
 	newDeposit.BalanceAfter = UserRefs[input.UserId].Balance + input.Amount
 	newDeposit.Time = time.Now()
+
 	DepositRefs[input.DepositId] = newDeposit
-	DepositRefsNeedUpdate[input.DepositId] = newDeposit
+	DepositRefsNeedUpdate = append(DepositRefsNeedUpdate, newDeposit)
 
 	UserRefs[input.UserId].Balance += input.Amount
 	UserRefs[input.UserId].DepositSum += input.Amount
 	UserRefs[input.UserId].DepositCount++
-	UserRefsNeedUpdate[input.UserId] = UserRefs[input.UserId]
+	UserRefsNeedUpdate = append(UserRefsNeedUpdate, UserRefs[input.UserId])
 
 	c.JSON(http.StatusCreated, gin.H{"error": "", "balance": UserRefs[input.UserId].Balance})
 }
@@ -108,6 +121,9 @@ func AddTransaction(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	mutex.Lock()
+	defer mutex.Unlock()
 
 	_, isInUserRefs := UserRefs[input.UserId]
 	if !isInUserRefs {
@@ -156,8 +172,8 @@ func AddTransaction(c *gin.Context) {
 	newTransaction.Time = time.Now()
 
 	TransactionRefs[input.TransactionId] = newTransaction
-	TransactionRefsNeedUpdate[input.TransactionId] = newTransaction
+	TransactionRefsNeedUpdate = append(TransactionRefsNeedUpdate, newTransaction)
 
-	UserRefsNeedUpdate[input.UserId] = UserRefs[input.UserId]
+	UserRefsNeedUpdate = append(UserRefsNeedUpdate, UserRefs[input.UserId])
 	c.JSON(http.StatusCreated, gin.H{"error": "", "balance": UserRefs[input.UserId].Balance})
 }

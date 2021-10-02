@@ -31,25 +31,37 @@ func StartServer() *http.Server {
 }
 
 func main() {
-	dbUpdatePeriod := time.Second * 10
-	dbUpdateMaxSyncTime := time.Second * 5
-	DbStartSync(dbUpdatePeriod, dbUpdateMaxSyncTime)
+	dbUpdatePeriod := time.Second * 4
+	dbUpdateMaxSyncTime := time.Second * 2
+	chStopLoop := make(chan int) // Any data sent to this chan will stop sync with DB
+
+	DbConnect()
+	go DbSyncLoop(chStopLoop, dbUpdatePeriod, dbUpdateMaxSyncTime)
 
 	srv := StartServer()
+
 	quit := make(chan os.Signal, 100)
 	signal.Notify(quit, os.Interrupt)
 
 	<-quit
-	fmt.Println("Stopping sync...")
-	DbStopSync(dbUpdatePeriod + dbUpdateMaxSyncTime)
-
+	fmt.Println("Shutting down the server...")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	fmt.Println("Shutting down...")
 	err := srv.Shutdown(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	fmt.Println("Stopping sync loop...")
+	chStopLoop <- 1
+
+	fmt.Println("Performing last sync...")
+	DbUpdate(dbUpdateMaxSyncTime)
+
+	fmt.Println("Disconnecting from DB...")
+	ctx, ctxCancel := context.WithTimeout(context.Background(), time.Second)
+	DbClient.Disconnect(ctx)
+	ctxCancel()
+
 	fmt.Println("SHUTDOWN COMPLETE")
 }

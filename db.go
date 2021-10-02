@@ -25,7 +25,7 @@ func DbConnect() {
 	var err error
 	err = godotenv.Load()
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		log.Fatal(err)
 	}
 
 	DbClient, err = mongo.NewClient(options.Client().ApplyURI(os.Getenv("MONGODB_URL")))
@@ -59,48 +59,36 @@ func DbConnect() {
 	// }
 }
 
-func DbStartSync(period time.Duration, maxsynctime time.Duration) {
-	// Start periodic sync with DB
-	DbConnect()
-
-	var ctxSync context.Context
-	ctxSync, DbCtxSyncCancel = context.WithCancel(context.Background())
-	// dbCtxSyncCancel is used later to terminate dbSyncLoop
-	go DbSyncLoop(ctxSync, period, maxsynctime)
-}
-
-func DbStopSync(waittime time.Duration) {
-	// Stop periodic sync with DB
-	DbCtxSyncCancel()
-	fmt.Println("Waiting for DB sync loop to stop...")
-	time.Sleep(waittime) // Wait for current sync if any
-
-	ctx, ctxCancel := context.WithTimeout(context.Background(), time.Second)
-	DbClient.Disconnect(ctx)
-	ctxCancel()
-
-	DbCtxConnectCancel()
-}
-
-func DbSyncLoop(ctxsync context.Context, period time.Duration, maxsynctime time.Duration) {
+func DbSyncLoop(chStopLoop chan int, period time.Duration, maxsynctime time.Duration) {
+	TimeToSync := time.After(period)
 	for {
-		time.Sleep(period)
-		DbUpdate(maxsynctime)
-		if ctxsync.Err() != nil {
-			fmt.Println("DB sync loop stopped")
+		select {
+		case <-TimeToSync:
+			fmt.Println("loop")
+			DbUpdate(maxsynctime)
+			TimeToSync = time.After(period)
+		case <-chStopLoop:
+			fmt.Println("DB sync loop stopped...")
 			return
 		}
 	}
 }
 
 func DbUpdate(maxtime time.Duration) {
-	UserRefsNeedUpdateCopy := UserRefsNeedUpdate
-	DepositRefsNeedUpdateCopy := DepositRefsNeedUpdate
-	TransactionRefsNeedUpdateCopy := TransactionRefsNeedUpdate
+	mutex.Lock()
+	UserRefsNeedUpdateCopy := make([]*User, len(UserRefsNeedUpdate))
+	DepositRefsNeedUpdateCopy := make([]*Deposit, len(DepositRefsNeedUpdate))
+	TransactionRefsNeedUpdateCopy := make([]*Transaction, len(TransactionRefsNeedUpdate))
+	copy(UserRefsNeedUpdateCopy, UserRefsNeedUpdate)
+	copy(DepositRefsNeedUpdateCopy, DepositRefsNeedUpdate)
+	copy(TransactionRefsNeedUpdateCopy, TransactionRefsNeedUpdate)
+	UserRefsNeedUpdate = []*User{}
+	DepositRefsNeedUpdate = []*Deposit{}
+	TransactionRefsNeedUpdate = []*Transaction{}
+	mutex.Unlock()
 
-	UserRefsNeedUpdate = map[uint64]*User{}
-	DepositRefsNeedUpdate = map[uint64]*Deposit{}
-	TransactionRefsNeedUpdate = map[uint64]*Transaction{}
+	// If any of the User, Deposit or Transaction objects gets modified while this goroutine executes,
+	// any possible error will be corrected on the next call
 
 	ctx, cancel := context.WithTimeout(context.Background(), maxtime)
 	defer cancel()
@@ -112,7 +100,8 @@ func DbUpdate(maxtime time.Duration) {
 			u,
 			options.Replace().SetUpsert(true))
 		if err != nil {
-			log.Fatal(err)
+			fmt.Println(err)
+			return
 		}
 	}
 
@@ -120,7 +109,8 @@ func DbUpdate(maxtime time.Duration) {
 		fmt.Println("Now inserting deposit: ", d)
 		_, err := ColDeposits.InsertOne(ctx, d)
 		if err != nil {
-			log.Fatal(err)
+			fmt.Println(err)
+			return
 		}
 	}
 
@@ -128,7 +118,8 @@ func DbUpdate(maxtime time.Duration) {
 		fmt.Println("Now inserting transaction: ", d)
 		_, err := ColTransactions.InsertOne(ctx, d)
 		if err != nil {
-			log.Fatal(err)
+			fmt.Println(err)
+			return
 		}
 	}
 }
