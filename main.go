@@ -62,6 +62,7 @@ func main() {
 	ctx, ctxCancel := context.WithTimeout(context.Background(), time.Second)
 	DbClient.Disconnect(ctx)
 	ctxCancel()
+	DbCtxConnectCancel()
 
 	fmt.Println("SHUTDOWN COMPLETE")
 }

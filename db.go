@@ -16,8 +16,6 @@ import (
 var ColUsers *mongo.Collection
 var ColDeposits *mongo.Collection
 var ColTransactions *mongo.Collection
-
-var DbCtxSyncCancel context.CancelFunc    // Function to be called to signal a need to stop sync with DB
 var DbCtxConnectCancel context.CancelFunc // Cancel function for the dbClient.Connect context
 var DbClient *mongo.Client
 
@@ -64,7 +62,6 @@ func DbSyncLoop(chStopLoop chan int, period time.Duration, maxsynctime time.Dura
 	for {
 		select {
 		case <-TimeToSync:
-			fmt.Println("loop")
 			DbUpdate(maxsynctime)
 			TimeToSync = time.After(period)
 		case <-chStopLoop:
@@ -94,7 +91,6 @@ func DbUpdate(maxtime time.Duration) {
 	defer cancel()
 
 	for _, u := range UserRefsNeedUpdateCopy {
-		fmt.Println("Now upserting user: ", u)
 		_, err := ColUsers.ReplaceOne(ctx,
 			bson.D{{Key: "_id", Value: u.Id}},
 			u,
@@ -106,7 +102,6 @@ func DbUpdate(maxtime time.Duration) {
 	}
 
 	for _, d := range DepositRefsNeedUpdateCopy {
-		fmt.Println("Now inserting deposit: ", d)
 		_, err := ColDeposits.InsertOne(ctx, d)
 		if err != nil {
 			fmt.Println(err)
@@ -115,7 +110,6 @@ func DbUpdate(maxtime time.Duration) {
 	}
 
 	for _, d := range TransactionRefsNeedUpdateCopy {
-		fmt.Println("Now inserting transaction: ", d)
 		_, err := ColTransactions.InsertOne(ctx, d)
 		if err != nil {
 			fmt.Println(err)
