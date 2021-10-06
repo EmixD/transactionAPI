@@ -73,15 +73,21 @@ func DbSyncLoop(chStopLoop chan int, period time.Duration, maxsynctime time.Dura
 
 func DbUpdate(maxtime time.Duration) {
 	mutex.Lock()
-	UserRefsNeedUpdateCopy := make([]*User, len(UserRefsNeedUpdate))
-	DepositRefsNeedUpdateCopy := make([]*Deposit, len(DepositRefsNeedUpdate))
-	TransactionRefsNeedUpdateCopy := make([]*Transaction, len(TransactionRefsNeedUpdate))
-	copy(UserRefsNeedUpdateCopy, UserRefsNeedUpdate)
-	copy(DepositRefsNeedUpdateCopy, DepositRefsNeedUpdate)
-	copy(TransactionRefsNeedUpdateCopy, TransactionRefsNeedUpdate)
-	UserRefsNeedUpdate = []*User{}
-	DepositRefsNeedUpdate = []*Deposit{}
-	TransactionRefsNeedUpdate = []*Transaction{}
+	UserRefsNeedUpdateCopy := map[uint64]*User{}
+	DepositRefsNeedUpdateCopy := map[uint64]*Deposit{}
+	TransactionRefsNeedUpdateCopy := map[uint64]*Transaction{}
+	for k, v := range UserRefsNeedUpdate {
+		UserRefsNeedUpdateCopy[k] = v
+	}
+	for k, v := range DepositRefsNeedUpdate {
+		DepositRefsNeedUpdateCopy[k] = v
+	}
+	for k, v := range TransactionRefsNeedUpdate {
+		TransactionRefsNeedUpdateCopy[k] = v
+	}
+	UserRefsNeedUpdate = map[uint64]*User{}
+	DepositRefsNeedUpdate = map[uint64]*Deposit{}
+	TransactionRefsNeedUpdate = map[uint64]*Transaction{}
 	mutex.Unlock()
 
 	// If any of the User, Deposit or Transaction objects gets modified while this goroutine executes,
@@ -97,7 +103,6 @@ func DbUpdate(maxtime time.Duration) {
 			options.Replace().SetUpsert(true))
 		if err != nil {
 			fmt.Println(err)
-			return
 		}
 	}
 
@@ -105,7 +110,6 @@ func DbUpdate(maxtime time.Duration) {
 		_, err := ColDeposits.InsertOne(ctx, d)
 		if err != nil {
 			fmt.Println(err)
-			return
 		}
 	}
 
@@ -113,7 +117,6 @@ func DbUpdate(maxtime time.Duration) {
 		_, err := ColTransactions.InsertOne(ctx, d)
 		if err != nil {
 			fmt.Println(err)
-			return
 		}
 	}
 }

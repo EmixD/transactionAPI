@@ -8,13 +8,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var mutex sync.Mutex                             // For reading and updating all Refs maps and slices
-var UserRefs = map[uint64]*User{}                // All users
-var DepositRefs = map[uint64]*Deposit{}          // All deposits
-var TransactionRefs = map[uint64]*Transaction{}  // All transactions
-var UserRefsNeedUpdate = []*User{}               // Users that need to be updated in DB
-var DepositRefsNeedUpdate = []*Deposit{}         // Deposits that need to be updated in DB
-var TransactionRefsNeedUpdate = []*Transaction{} // Transactions that need to be updated in DB
+var mutex sync.Mutex                                      // For reading and updating all Refs maps and slices
+var UserRefs = map[uint64]*User{}                         // All users
+var DepositRefs = map[uint64]*Deposit{}                   // All deposits
+var TransactionRefs = map[uint64]*Transaction{}           // All transactions
+var UserRefsNeedUpdate = map[uint64]*User{}               // Users that need to be updated in DB
+var DepositRefsNeedUpdate = map[uint64]*Deposit{}         // Deposits that need to be updated in DB
+var TransactionRefsNeedUpdate = map[uint64]*Transaction{} // Transactions that need to be updated in DB
 
 func AddUser(c *gin.Context) {
 	var input AddUserInput
@@ -41,7 +41,7 @@ func AddUser(c *gin.Context) {
 	newUser.Id = input.Id
 	newUser.Balance = input.Balance
 	UserRefs[newUser.Id] = newUser
-	UserRefsNeedUpdate = append(UserRefsNeedUpdate, newUser)
+	UserRefsNeedUpdate[newUser.Id] = newUser
 
 	c.IndentedJSON(http.StatusCreated, gin.H{"error": ""})
 }
@@ -105,12 +105,12 @@ func AddDeposit(c *gin.Context) {
 	newDeposit.Time = time.Now()
 
 	DepositRefs[input.DepositId] = newDeposit
-	DepositRefsNeedUpdate = append(DepositRefsNeedUpdate, newDeposit)
+	DepositRefsNeedUpdate[input.DepositId] = newDeposit
 
 	UserRefs[input.UserId].Balance += input.Amount
 	UserRefs[input.UserId].DepositSum += input.Amount
 	UserRefs[input.UserId].DepositCount++
-	UserRefsNeedUpdate = append(UserRefsNeedUpdate, UserRefs[input.UserId])
+	UserRefsNeedUpdate[input.UserId] = UserRefs[input.UserId]
 
 	c.JSON(http.StatusCreated, gin.H{"error": "", "balance": UserRefs[input.UserId].Balance})
 }
@@ -172,8 +172,8 @@ func AddTransaction(c *gin.Context) {
 	newTransaction.Time = time.Now()
 
 	TransactionRefs[input.TransactionId] = newTransaction
-	TransactionRefsNeedUpdate = append(TransactionRefsNeedUpdate, newTransaction)
+	TransactionRefsNeedUpdate[input.TransactionId] = newTransaction
 
-	UserRefsNeedUpdate = append(UserRefsNeedUpdate, UserRefs[input.UserId])
+	UserRefsNeedUpdate[input.UserId] = UserRefs[input.UserId]
 	c.JSON(http.StatusCreated, gin.H{"error": "", "balance": UserRefs[input.UserId].Balance})
 }

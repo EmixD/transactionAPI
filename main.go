@@ -31,8 +31,8 @@ func StartServer() *http.Server {
 }
 
 func main() {
-	dbUpdatePeriod := time.Second * 4
-	dbUpdateMaxSyncTime := time.Second * 2
+	dbUpdatePeriod := time.Second * 10
+	dbUpdateMaxSyncTime := time.Second * 5
 	chStopLoop := make(chan int) // Any data sent to this chan will stop sync with DB
 
 	DbConnect()
